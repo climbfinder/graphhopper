@@ -1,14 +1,18 @@
 package com.graphhopper.routing.util.parsers;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.util.FerrySpeedCalculator;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.routing.util.WayAccess;
-
-import java.util.*;
-
 import static com.graphhopper.routing.util.parsers.OSMTemporalAccessParser.hasTemporalRestriction;
 
 public abstract class BikeCommonAccessParser extends AbstractAccessParser implements TagParser {
@@ -22,10 +26,10 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
 
         this.roundaboutEnc = roundaboutEnc;
 
-        restrictedValues.add("agricultural");
-        restrictedValues.add("forestry");
-        restrictedValues.add("delivery");
-
+        // CF: Turned off restrictions for now. We show them as warnings in the UI.
+        // restrictedValues.add("agricultural");
+        // restrictedValues.add("forestry");
+        // restrictedValues.add("delivery");
         barriers.add("fence");
 
         allowedHighways.addAll(Arrays.asList("living_street", "steps", "cycleway", "path", "footway", "platform",
@@ -42,60 +46,72 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
             if (FerrySpeedCalculator.isFerry(way)) {
                 // if bike is NOT explicitly tagged allow bike but only if foot is not specified either
                 String bikeTag = way.getTag("bicycle");
-                if (bikeTag == null && !way.hasTag("foot") || intendedValues.contains(bikeTag))
+                if (bikeTag == null && !way.hasTag("foot") || intendedValues.contains(bikeTag)) {
                     access = WayAccess.FERRY;
+                }
             }
 
             // special case not for all acceptedRailways, only platform
-            if (way.hasTag("railway", "platform"))
+            if (way.hasTag("railway", "platform")) {
                 access = WayAccess.WAY;
+            }
 
-            if (way.hasTag("man_made", "pier"))
+            if (way.hasTag("man_made", "pier")) {
                 access = WayAccess.WAY;
+            }
 
             if (!access.canSkip()) {
-                if (way.hasTag(restrictionKeys, restrictedValues))
+                if (way.hasTag(restrictionKeys, restrictedValues)) {
                     return WayAccess.CAN_SKIP;
+                }
                 return access;
             }
 
             return WayAccess.CAN_SKIP;
         }
 
-        if (!allowedHighways.contains(highwayValue))
+        if (!allowedHighways.contains(highwayValue)) {
             return WayAccess.CAN_SKIP;
+        }
 
         String sacScale = way.getTag("sac_scale");
         if (sacScale != null) {
-            if (!isSacScaleAllowed(sacScale))
+            if (!isSacScaleAllowed(sacScale) && !way.hasTag("bicycle")) {
                 return WayAccess.CAN_SKIP;
+            }
         }
 
         // use the way for pushing
-        if (way.hasTag("bicycle", "dismount"))
+        if (way.hasTag("bicycle", "dismount")) {
             return WayAccess.WAY;
+        }
 
         int firstIndex = way.getFirstIndex(restrictionKeys);
         if (firstIndex >= 0) {
             String firstValue = way.getTag(restrictionKeys.get(firstIndex), "");
             String[] restrict = firstValue.split(";");
             for (String value : restrict) {
-                if (restrictedValues.contains(value) && !hasTemporalRestriction(way, firstIndex, restrictionKeys))
+                if (restrictedValues.contains(value) && !hasTemporalRestriction(way, firstIndex, restrictionKeys)) {
                     return WayAccess.CAN_SKIP;
-                if (intendedValues.contains(value))
+                }
+                if (intendedValues.contains(value)) {
                     return WayAccess.WAY;
+                }
             }
         }
 
         // accept only if explicitly tagged for bike usage
-        if ("motorway".equals(highwayValue) || "motorway_link".equals(highwayValue) || "bridleway".equals(highwayValue))
+        if ("motorway".equals(highwayValue) || "motorway_link".equals(highwayValue) || "bridleway".equals(highwayValue)) {
             return WayAccess.CAN_SKIP;
+        }
 
-        if (way.hasTag("motorroad", "yes"))
+        if (way.hasTag("motorroad", "yes")) {
             return WayAccess.CAN_SKIP;
+        }
 
-        if (isBlockFords() && ("ford".equals(highwayValue) || way.hasTag("ford")))
+        if (isBlockFords() && ("ford".equals(highwayValue) || way.hasTag("ford"))) {
             return WayAccess.CAN_SKIP;
+        }
 
         return WayAccess.WAY;
     }
@@ -108,8 +124,9 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
     @Override
     public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
         WayAccess access = getAccess(way);
-        if (access.canSkip())
+        if (access.canSkip()) {
             return;
+        }
 
         if (access.isFerry()) {
             accessEnc.setBool(false, edgeId, edgeIntAccess, true);

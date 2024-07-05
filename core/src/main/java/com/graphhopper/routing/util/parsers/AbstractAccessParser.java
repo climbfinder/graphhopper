@@ -10,6 +10,7 @@ import com.graphhopper.storage.IntsRef;
 import java.util.*;
 
 public abstract class AbstractAccessParser implements TagParser {
+
     static final Collection<String> ONEWAYS = Arrays.asList("yes", "true", "1", "-1");
     static final Collection<String> INTENDED = Arrays.asList("yes", "designated", "official", "permissive");
 
@@ -27,11 +28,12 @@ public abstract class AbstractAccessParser implements TagParser {
         this.accessEnc = accessEnc;
 
         restrictedValues.add("no");
-        restrictedValues.add("restricted");
         restrictedValues.add("military");
         restrictedValues.add("emergency");
-        restrictedValues.add("private");
-        restrictedValues.add("permit");
+        // CF: Turned off restrictions for now. We show them as warnings in the UI.
+        // restrictedValues.add("restricted");
+        // restrictedValues.add("private");
+        // restrictedValues.add("permit");
 
         restrictionKeys.addAll(OSMRoadAccessParser.toOSMRestrictions(transportationMode));
     }
@@ -46,10 +48,12 @@ public abstract class AbstractAccessParser implements TagParser {
 
     protected void blockPrivate(boolean blockPrivate) {
         if (!blockPrivate) {
-            if (!restrictedValues.remove("private"))
+            if (!restrictedValues.remove("private")) {
                 throw new IllegalStateException("no 'private' found in restrictedValues");
-            if (!restrictedValues.remove("permit"))
+            }
+            if (!restrictedValues.remove("permit")) {
                 throw new IllegalStateException("no 'permit' found in restrictedValues");
+            }
             intendedValues.add("private");
             intendedValues.add("permit");
         }
@@ -74,22 +78,24 @@ public abstract class AbstractAccessParser implements TagParser {
     public abstract void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way);
 
     /**
-     * @return true if the given OSM node blocks access for the specified restrictions, false otherwise
+     * @return true if the given OSM node blocks access for the specified
+     * restrictions, false otherwise
      */
     public boolean isBarrier(ReaderNode node) {
         // note that this method will be only called for certain nodes as defined by OSMReader!
         String firstValue = node.getFirstValue(restrictionKeys);
 
-        if (restrictedValues.contains(firstValue))
-            return true;
-        else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue))
-            return true;
-        else if (intendedValues.contains(firstValue))
-            return false;
-        else if (node.hasTag("barrier", barriers))
-            return true;
-        else
+        if (restrictedValues.contains(firstValue)) {
+            return true; 
+        }else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue)) {
+            return true; 
+        }else if (intendedValues.contains(firstValue)) {
+            return false; 
+        }else if (node.hasTag("barrier", barriers)) {
+            return true; 
+        }else {
             return blockFords && node.hasTag("ford", "yes");
+        }
     }
 
     public final BooleanEncodedValue getAccessEnc() {
