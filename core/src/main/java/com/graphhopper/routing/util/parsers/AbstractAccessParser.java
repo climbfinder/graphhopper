@@ -1,13 +1,19 @@
 package com.graphhopper.routing.util.parsers;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.storage.IntsRef;
-
-import java.util.*;
 
 public abstract class AbstractAccessParser implements TagParser {
 
@@ -23,6 +29,9 @@ public abstract class AbstractAccessParser implements TagParser {
     protected final Set<String> barriers = new HashSet<>(5);
     protected final BooleanEncodedValue accessEnc;
     private boolean blockFords = true;
+
+    static final Collection<String> ALLOWED_BARRIERS = Arrays.asList("lift_gate", "gate", "sally_port", "toll_booth", "block", "swing_gate", "cattle_grid", "cycle_barrier", "kissing_gate");
+    protected final Set<String> allowedBarriers = new HashSet<>(ALLOWED_BARRIERS);
 
     protected AbstractAccessParser(BooleanEncodedValue accessEnc, TransportationMode transportationMode) {
         this.accessEnc = accessEnc;
@@ -48,12 +57,12 @@ public abstract class AbstractAccessParser implements TagParser {
 
     protected void blockPrivate(boolean blockPrivate) {
         if (!blockPrivate) {
-            if (!restrictedValues.remove("private")) {
-                throw new IllegalStateException("no 'private' found in restrictedValues");
-            }
-            if (!restrictedValues.remove("permit")) {
-                throw new IllegalStateException("no 'permit' found in restrictedValues");
-            }
+            // if (!restrictedValues.remove("private")) {
+            //     throw new IllegalStateException("no 'private' found in restrictedValues");
+            // }
+            // if (!restrictedValues.remove("permit")) {
+            //     throw new IllegalStateException("no 'permit' found in restrictedValues");
+            // }
             intendedValues.add("private");
             intendedValues.add("permit");
         }
@@ -86,14 +95,16 @@ public abstract class AbstractAccessParser implements TagParser {
         String firstValue = node.getFirstValue(restrictionKeys);
 
         if (restrictedValues.contains(firstValue)) {
-            return true; 
-        }else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue)) {
-            return true; 
-        }else if (intendedValues.contains(firstValue)) {
-            return false; 
-        }else if (node.hasTag("barrier", barriers)) {
-            return true; 
-        }else {
+            return true;
+        } else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue)) {
+            return true;
+        } else if (intendedValues.contains(firstValue)) {
+            return false;
+        } else if (allowedBarriers.contains(node.getTag("barrier"))) {
+            return false;
+        } else if (node.hasTag("barrier", barriers)) {
+            return true;
+        } else {
             return blockFords && node.hasTag("ford", "yes");
         }
     }

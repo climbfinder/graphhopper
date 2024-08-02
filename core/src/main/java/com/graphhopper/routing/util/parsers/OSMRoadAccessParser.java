@@ -17,22 +17,22 @@
  */
 package com.graphhopper.routing.util.parsers;
 
-import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EdgeIntAccess;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RoadAccess;
-import com.graphhopper.routing.util.TransportationMode;
-import com.graphhopper.routing.util.countryrules.CountryRule;
-import com.graphhopper.storage.IntsRef;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.ev.EnumEncodedValue;
+import com.graphhopper.routing.ev.RoadAccess;
 import static com.graphhopper.routing.ev.RoadAccess.YES;
+import com.graphhopper.routing.util.TransportationMode;
+import com.graphhopper.routing.util.countryrules.CountryRule;
+import com.graphhopper.storage.IntsRef;
 
 public class OSMRoadAccessParser implements TagParser {
+
     protected final EnumEncodedValue<RoadAccess> roadAccessEnc;
     private final List<String> restrictions;
 
@@ -47,19 +47,23 @@ public class OSMRoadAccessParser implements TagParser {
 
         List<Map<String, Object>> nodeTags = readerWay.getTag("node_tags", Collections.emptyList());
         // a barrier edge has the restriction in both nodes and the tags are the same
-        if (readerWay.hasTag("gh:barrier_edge"))
+        if (readerWay.hasTag("gh:barrier_edge")) {
             for (String restriction : restrictions) {
                 Object value = nodeTags.get(0).get(restriction);
-                if (value != null) accessValue = getRoadAccess((String) value, accessValue);
+                if (value != null) {
+                    accessValue = getRoadAccess((String) value, accessValue);
+                }
             }
+        }
 
         for (String restriction : restrictions) {
             accessValue = getRoadAccess(readerWay.getTag(restriction), accessValue);
         }
 
         CountryRule countryRule = readerWay.getTag("country_rule", null);
-        if (countryRule != null)
+        if (countryRule != null) {
             accessValue = countryRule.getAccess(readerWay, TransportationMode.CAR, accessValue);
+        }
 
         roadAccessEnc.setEnum(false, edgeId, edgeIntAccess, accessValue);
     }
@@ -85,7 +89,7 @@ public class OSMRoadAccessParser implements TagParser {
             case VEHICLE:
                 return Arrays.asList("vehicle", "access");
             case BIKE:
-                return Arrays.asList("bicycle", "access");
+                return Arrays.asList("bicycle");
             case CAR:
                 return Arrays.asList("motorcar", "motor_vehicle", "vehicle", "access");
             case MOTORCYCLE:

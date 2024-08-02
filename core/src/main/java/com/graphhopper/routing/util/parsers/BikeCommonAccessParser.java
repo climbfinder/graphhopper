@@ -76,7 +76,7 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
 
         String sacScale = way.getTag("sac_scale");
         if (sacScale != null) {
-            if (!isSacScaleAllowed(sacScale) && !way.hasTag("bicycle")) {
+            if (!isSacScaleAllowed(sacScale) && !way.hasTag("bicycle") && !way.hasTag("surface", "asphalt")) {
                 return WayAccess.CAN_SKIP;
             }
         }
