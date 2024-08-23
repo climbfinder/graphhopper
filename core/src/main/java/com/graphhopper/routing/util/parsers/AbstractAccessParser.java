@@ -1,5 +1,13 @@
 package com.graphhopper.routing.util.parsers;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
@@ -7,9 +15,8 @@ import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.storage.IntsRef;
 
-import java.util.*;
-
 public abstract class AbstractAccessParser implements TagParser {
+
     static final Collection<String> ONEWAYS = Arrays.asList("yes", "true", "1", "-1");
     static final Collection<String> INTENDED = Arrays.asList("yes", "designated", "official", "permissive");
 
@@ -23,15 +30,19 @@ public abstract class AbstractAccessParser implements TagParser {
     protected final BooleanEncodedValue accessEnc;
     private boolean blockFords = true;
 
+    static final Collection<String> ALLOWED_BARRIERS = Arrays.asList("lift_gate", "gate", "sally_port", "toll_booth", "block", "swing_gate", "cattle_grid", "cycle_barrier", "kissing_gate");
+    protected final Set<String> allowedBarriers = new HashSet<>(ALLOWED_BARRIERS);
+
     protected AbstractAccessParser(BooleanEncodedValue accessEnc, TransportationMode transportationMode) {
         this.accessEnc = accessEnc;
 
         restrictedValues.add("no");
-        restrictedValues.add("restricted");
         restrictedValues.add("military");
         restrictedValues.add("emergency");
-        restrictedValues.add("private");
-        restrictedValues.add("permit");
+        // CF: Turned off restrictions for now. We show them as warnings in the UI.
+        // restrictedValues.add("restricted");
+        // restrictedValues.add("private");
+        // restrictedValues.add("permit");
 
         restrictionKeys.addAll(OSMRoadAccessParser.toOSMRestrictions(transportationMode));
     }
@@ -46,10 +57,12 @@ public abstract class AbstractAccessParser implements TagParser {
 
     protected void blockPrivate(boolean blockPrivate) {
         if (!blockPrivate) {
-            if (!restrictedValues.remove("private"))
-                throw new IllegalStateException("no 'private' found in restrictedValues");
-            if (!restrictedValues.remove("permit"))
-                throw new IllegalStateException("no 'permit' found in restrictedValues");
+            // if (!restrictedValues.remove("private")) {
+            //     throw new IllegalStateException("no 'private' found in restrictedValues");
+            // }
+            // if (!restrictedValues.remove("permit")) {
+            //     throw new IllegalStateException("no 'permit' found in restrictedValues");
+            // }
             intendedValues.add("private");
             intendedValues.add("permit");
         }
@@ -74,22 +87,26 @@ public abstract class AbstractAccessParser implements TagParser {
     public abstract void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way);
 
     /**
-     * @return true if the given OSM node blocks access for the specified restrictions, false otherwise
+     * @return true if the given OSM node blocks access for the specified
+     * restrictions, false otherwise
      */
     public boolean isBarrier(ReaderNode node) {
         // note that this method will be only called for certain nodes as defined by OSMReader!
         String firstValue = node.getFirstValue(restrictionKeys);
 
-        if (restrictedValues.contains(firstValue))
+        if (restrictedValues.contains(firstValue)) {
             return true;
-        else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue))
+        } else if (node.hasTag("locked", "yes") && !intendedValues.contains(firstValue)) {
             return true;
-        else if (intendedValues.contains(firstValue))
+        } else if (intendedValues.contains(firstValue)) {
             return false;
-        else if (node.hasTag("barrier", barriers))
+        } else if (allowedBarriers.contains(node.getTag("barrier"))) {
+            return false;
+        } else if (node.hasTag("barrier", barriers)) {
             return true;
-        else
+        } else {
             return blockFords && node.hasTag("ford", "yes");
+        }
     }
 
     public final BooleanEncodedValue getAccessEnc() {

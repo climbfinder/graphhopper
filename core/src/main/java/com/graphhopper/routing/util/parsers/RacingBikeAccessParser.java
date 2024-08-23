@@ -11,7 +11,7 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
     public RacingBikeAccessParser(EncodedValueLookup lookup, PMap properties) {
         this(lookup.getBooleanEncodedValue(VehicleAccess.key("racingbike")),
                 lookup.getBooleanEncodedValue(Roundabout.KEY));
-        blockPrivate(properties.getBool("block_private", true));
+        blockPrivate(properties.getBool("block_private", false));
         blockFords(properties.getBool("block_fords", false));
     }
 
