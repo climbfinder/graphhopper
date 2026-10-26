@@ -23,6 +23,7 @@ import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.ev.RoadClass;
 import com.graphhopper.storage.IntsRef;
 
+import static com.graphhopper.routing.ev.RoadClass.CYCLEWAY;
 import static com.graphhopper.routing.ev.RoadClass.OTHER;
 
 public class OSMRoadClassParser implements TagParser {
@@ -38,11 +39,23 @@ public class OSMRoadClassParser implements TagParser {
         String roadClassTag = readerWay.getTag("highway");
         if (roadClassTag == null)
             return;
+        // climbfinder: roads with a cycle lane or track count as cycleway, so a custom model can prefer them
+        if (isCycleInfrastructure(readerWay)) {
+            roadClassEnc.setEnum(false, edgeId, edgeIntAccess, CYCLEWAY);
+            return;
+        }
         RoadClass roadClass = RoadClass.find(roadClassTag);
         if (roadClass == OTHER && roadClassTag.endsWith("_link"))
             roadClass = RoadClass.find(roadClassTag.substring(0, roadClassTag.length() - 5));
 
         if (roadClass != OTHER)
             roadClassEnc.setEnum(false, edgeId, edgeIntAccess, roadClass);
+    }
+
+    static boolean isCycleInfrastructure(ReaderWay way) {
+        boolean hasCycleway = way.hasTag("cycleway") || way.hasTag("cycleway:left")
+                || way.hasTag("cycleway:right") || way.hasTag("cycleway:both");
+        // cycleway=opposite only allows contraflow cycling on a oneway street, it is no cycle infrastructure
+        return hasCycleway && !way.hasTag("cycleway", "opposite") || way.hasTag("bicycle", "designated");
     }
 }
