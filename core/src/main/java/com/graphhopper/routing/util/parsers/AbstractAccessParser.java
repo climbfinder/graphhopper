@@ -36,6 +36,8 @@ public abstract class AbstractAccessParser implements TagParser {
     protected final Set<String> allowedValues = new HashSet<>(INTENDED);
     // http://wiki.openstreetmap.org/wiki/Mapfeatures#Barrier
     protected final Set<String> barriers = new HashSet<>(5);
+    // climbfinder: barrier values that never block on their own (an access restriction or locked=yes still does)
+    protected final Set<String> allowedBarriers = new HashSet<>();
     protected final BooleanEncodedValue accessEnc;
     private boolean blockFords = true;
 
@@ -102,6 +104,8 @@ public abstract class AbstractAccessParser implements TagParser {
         else if (node.hasTag("locked", "yes") && !allowedValues.contains(firstValue))
             return true;
         else if (allowedValues.contains(firstValue))
+            return false;
+        else if (allowedBarriers.contains(node.getTag("barrier")))
             return false;
         else if (node.hasTag("barrier", barriers))
             return true;

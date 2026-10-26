@@ -33,5 +33,8 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
         restrictedValues.remove("restricted");
         // climbfinder: neither do agricultural, forestry and delivery
         restrictedValues.removeAll(Arrays.asList("agricultural", "forestry", "delivery"));
+        // climbfinder: a racing bike gets through these barriers
+        allowedBarriers.addAll(Arrays.asList("lift_gate", "gate", "sally_port", "toll_booth", "block", "swing_gate",
+                "cattle_grid", "cycle_barrier", "kissing_gate"));
     }
 }

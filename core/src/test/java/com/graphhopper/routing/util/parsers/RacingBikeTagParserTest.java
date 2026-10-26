@@ -435,6 +435,34 @@ public class RacingBikeTagParserTest extends AbstractBikeTagParserTester {
         assertNotRestricting("delivery");
     }
 
+    @Test
+    public void climbfinderListedBarriersArePassable() {
+        for (String barrier : Arrays.asList("lift_gate", "gate", "sally_port", "toll_booth", "block", "swing_gate",
+                "cattle_grid", "cycle_barrier", "kissing_gate")) {
+            ReaderNode node = new ReaderNode(1, -1, -1);
+            node.setTag("barrier", barrier);
+            assertFalse(accessParser.isBarrier(node), barrier);
+            // an allowed barrier wins from a ford, as in the production jar
+            node.setTag("ford", "yes");
+            assertFalse(accessParser.isBarrier(node), barrier + " with ford");
+        }
+
+        ReaderNode node = new ReaderNode(1, -1, -1);
+        node.setTag("barrier", "stile");
+        assertTrue(accessParser.isBarrier(node));
+        node.setTag("barrier", "fence");
+        assertTrue(accessParser.isBarrier(node));
+
+        node.setTag("barrier", "kissing_gate");
+        node.setTag("bicycle", "no");
+        assertTrue(accessParser.isBarrier(node));
+
+        node = new ReaderNode(1, -1, -1);
+        node.setTag("barrier", "gate");
+        node.setTag("locked", "yes");
+        assertTrue(accessParser.isBarrier(node));
+    }
+
     private void assertNotRestricting(String bicycleValue) {
         ReaderWay way = new ReaderWay(1);
         way.setTag("highway", "track");
