@@ -1,9 +1,11 @@
 package com.graphhopper.routing.util.parsers;
 
+import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.EncodedValueLookup;
 import com.graphhopper.routing.ev.Roundabout;
 import com.graphhopper.routing.ev.VehicleAccess;
+import com.graphhopper.routing.util.WayAccess;
 import com.graphhopper.util.PMap;
 
 import java.util.Arrays;
@@ -36,5 +38,24 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
         // climbfinder: a racing bike gets through these barriers
         allowedBarriers.addAll(Arrays.asList("lift_gate", "gate", "sally_port", "toll_booth", "block", "swing_gate",
                 "cattle_grid", "cycle_barrier", "kissing_gate"));
+    }
+
+    @Override
+    public WayAccess getAccess(ReaderWay way) {
+        WayAccess access = super.getAccess(way);
+        if (!access.canSkip() && way.getTag("highway") != null && isBlockedBySacScale(way))
+            return WayAccess.CAN_SKIP;
+        return access;
+    }
+
+    /**
+     * climbfinder: upstream moved sac_scale into the custom models (hike_rating), which cannot express our exception
+     * for ways that carry a bicycle tag, so it stays an access rule for racing bikes.
+     */
+    static boolean isBlockedBySacScale(ReaderWay way) {
+        String sacScale = way.getTag("sac_scale");
+        // scales above hiking are nearly impossible on a bike, unless the way is tagged for bicycles or paved
+        return sacScale != null && !"hiking".equals(sacScale)
+                && !way.hasTag("bicycle") && !way.hasTag("surface", "asphalt");
     }
 }

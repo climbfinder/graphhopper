@@ -463,6 +463,32 @@ public class RacingBikeTagParserTest extends AbstractBikeTagParserTester {
         assertTrue(accessParser.isBarrier(node));
     }
 
+    @Test
+    public void climbfinderSacScaleBlocksUnlessTaggedForBicyclesOrAsphalt() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "path");
+        way.setTag("sac_scale", "hiking");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.setTag("sac_scale", "mountain_hiking");
+        assertTrue(accessParser.getAccess(way).canSkip());
+        way.setTag("highway", "track");
+        way.setTag("sac_scale", "alpine_hiking");
+        way.setTag("surface", "gravel");
+        assertTrue(accessParser.getAccess(way).canSkip());
+
+        way.setTag("surface", "asphalt");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.removeTag("surface");
+        way.setTag("bicycle", "designated");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "dismount");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+    }
+
     private void assertNotRestricting(String bicycleValue) {
         ReaderWay way = new ReaderWay(1);
         way.setTag("highway", "track");
