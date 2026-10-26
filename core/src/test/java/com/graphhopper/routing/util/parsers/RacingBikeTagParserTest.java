@@ -424,6 +424,22 @@ public class RacingBikeTagParserTest extends AbstractBikeTagParserTester {
     }
 
     @Test
+    public void climbfinderRestrictedDoesNotBlock() {
+        assertNotRestricting("restricted");
+    }
+
+    private void assertNotRestricting(String bicycleValue) {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "track");
+        way.setTag("bicycle", bicycleValue);
+        assertTrue(accessParser.getAccess(way).isWay(), bicycleValue);
+
+        ReaderNode node = new ReaderNode(1, -1, -1);
+        node.setTag("bicycle", bicycleValue);
+        assertFalse(accessParser.isBarrier(node), bicycleValue);
+    }
+
+    @Test
     public void climbfinderOnlyTheBicycleTagRestricts() {
         ReaderWay way = new ReaderWay(1);
         way.setTag("highway", "path");

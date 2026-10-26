@@ -27,5 +27,8 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
         barriers.add("kissing_gate");
         barriers.add("stile");
         barriers.add("turnstile");
+
+        // climbfinder: bicycle=restricted does not block a racing bike
+        restrictedValues.remove("restricted");
     }
 }
