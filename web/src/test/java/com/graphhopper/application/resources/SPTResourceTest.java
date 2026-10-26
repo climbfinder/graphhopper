@@ -108,7 +108,8 @@ public class SPTResourceTest {
 
         String[] row = lines[362].split(",");
         assertEquals("Placeta Na Maria Pla", row[0]);
-        assertEquals("residential", row[1]);
+        // climbfinder: residential upstream; this street has a cycleway or bicycle=designated tag, road_class=cycleway here
+        assertEquals("cycleway", row[1]);
         assertEquals(50, Double.parseDouble(row[2]), .1);
 
         row = lines[249].split(",");

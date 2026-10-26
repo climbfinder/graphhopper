@@ -24,7 +24,11 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
     private static final Collection<String> FWDONEWAYS = Arrays.asList("yes", "true", "1");
 
     protected BikeCommonAccessParser(BooleanEncodedValue accessEnc, BooleanEncodedValue roundaboutEnc) {
-        super(accessEnc, RESTRICTIONS);
+        this(accessEnc, roundaboutEnc, RESTRICTIONS);
+    }
+
+    protected BikeCommonAccessParser(BooleanEncodedValue accessEnc, BooleanEncodedValue roundaboutEnc, List<String> restrictionKeys) {
+        super(accessEnc, restrictionKeys);
 
         this.roundaboutEnc = roundaboutEnc;
 

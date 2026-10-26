@@ -104,7 +104,8 @@ public class RouteResourceCustomModelLMTest {
                 "}";
         jsonNode = query(body);
         path = jsonNode.get("paths").get(0);
-        assertEquals(path.get("distance").asDouble(), 1707, 5);
+        // climbfinder: 1707 upstream; ways with a cycleway or bicycle=designated tag are road_class=cycleway here and fall under the else rule
+        assertEquals(path.get("distance").asDouble(), 1791, 5);
     }
 
     @Test

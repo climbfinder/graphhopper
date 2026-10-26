@@ -48,6 +48,30 @@ public class OSMRoadClassParserTest {
     }
 
     @Test
+    public void climbfinderCycleLanesAndDesignatedWaysAreCycleway() {
+        assertEquals(RoadClass.CYCLEWAY, parse("secondary", "cycleway:right", "lane"));
+        assertEquals(RoadClass.CYCLEWAY, parse("secondary", "cycleway:left", "track"));
+        assertEquals(RoadClass.CYCLEWAY, parse("tertiary", "cycleway:both", "lane"));
+        assertEquals(RoadClass.CYCLEWAY, parse("residential", "cycleway", "track"));
+        assertEquals(RoadClass.CYCLEWAY, parse("footway", "bicycle", "designated"));
+        // cycleway=opposite only allows contraflow cycling on a oneway street
+        assertEquals(RoadClass.RESIDENTIAL, parse("residential", "cycleway", "opposite"));
+        // ported unchanged from cf-0.3: every other cycleway value counts, "no" included
+        assertEquals(RoadClass.CYCLEWAY, parse("secondary", "cycleway", "no"));
+        assertEquals(RoadClass.OTHER, parse(null, "cycleway", "lane"));
+    }
+
+    private RoadClass parse(String highway, String key, String value) {
+        ReaderWay readerWay = new ReaderWay(1);
+        if (highway != null)
+            readerWay.setTag("highway", highway);
+        readerWay.setTag(key, value);
+        ArrayEdgeIntAccess intAccess = new ArrayEdgeIntAccess(1);
+        parser.handleWayTags(0, intAccess, readerWay, relFlags);
+        return rcEnc.getEnum(false, 0, intAccess);
+    }
+
+    @Test
     public void testIgnore() {
         ReaderWay readerWay = new ReaderWay(1);
         EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);

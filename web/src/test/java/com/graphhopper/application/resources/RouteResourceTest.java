@@ -262,7 +262,8 @@ public class RouteResourceTest {
         request.setPathDetails(Arrays.asList(RoadClass.KEY, Surface.KEY, RoadEnvironment.KEY, "average_speed", RoadClassLink.KEY));
         GHResponse rsp = client.route(request);
         assertFalse(rsp.hasErrors(), rsp.getErrors().toString());
-        assertEquals(4, rsp.getBest().getPathDetails().get(RoadClass.KEY).size());
+        // climbfinder: 4 upstream; the last two points lie on a way with a cycleway or bicycle=designated tag, road_class=cycleway here
+        assertEquals(5, rsp.getBest().getPathDetails().get(RoadClass.KEY).size());
         assertEquals("primary", rsp.getBest().getPathDetails().get(RoadClass.KEY).get(3).getValue());
         assertFalse((Boolean) rsp.getBest().getPathDetails().get(RoadClassLink.KEY).get(0).getValue());
 
