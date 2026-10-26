@@ -17,6 +17,7 @@
  */
 package com.graphhopper.routing.util.parsers;
 
+import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.*;
@@ -31,7 +32,7 @@ import java.util.List;
 import static com.graphhopper.routing.util.PriorityCode.*;
 import static com.graphhopper.routing.util.parsers.BikeCommonAverageSpeedParser.MIN_SPEED;
 import static com.graphhopper.routing.util.parsers.BikeCommonAverageSpeedParser.PUSHING_SECTION_SPEED;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author ratrun
@@ -308,5 +309,138 @@ public class RacingBikeTagParserTest extends AbstractBikeTagParserTester {
         ReaderWay osmWay = new ReaderWay(1);
         osmWay.setTag("highway", "tertiary");
         assertPriority(PREFER, osmWay);
+    }
+
+    // climbfinder: the four overrides below replace shared bike tests whose expectations rely on the access tag,
+    // which does not restrict a racing bike in our fork. Expected values are those of the 9.x production jar.
+
+    @Test
+    @Override
+    public void testAccess() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "motorway");
+        assertTrue(accessParser.getAccess(way).canSkip());
+        way.setTag("bicycle", "yes");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.clearTags();
+        way.setTag("highway", "path");
+        way.setTag("access", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+        way.setTag("bicycle", "yes");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.clearTags();
+        way.setTag("highway", "service");
+        way.setTag("access", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.clearTags();
+        way.setTag("highway", "secondary");
+        way.setTag("access", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "dismount");
+        assertTrue(accessParser.getAccess(way).isWay());
+
+        way.clearTags();
+        way.setTag("highway", "secondary");
+        way.setTag("vehicle", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+
+        way.clearTags();
+        way.setTag("highway", "tertiary");
+        way.setTag("motorroad", "yes");
+        assertTrue(accessParser.getAccess(way).canSkip());
+
+        way.clearTags();
+        way.setTag("highway", "platform");
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+    }
+
+    @Test
+    @Override
+    public void testBarrierAccess() {
+        ReaderNode node = new ReaderNode(1, -1, -1);
+        node.setTag("barrier", "gate");
+        assertFalse(accessParser.isBarrier(node));
+
+        node.setTag("access", "no");
+        assertFalse(accessParser.isBarrier(node));
+        node.setTag("foot", "yes");
+        assertFalse(accessParser.isBarrier(node));
+
+        node = new ReaderNode(1, -1, -1);
+        node.setTag("barrier", "gate");
+        node.setTag("access", "yes");
+        node.setTag("bicycle", "no");
+        assertTrue(accessParser.isBarrier(node));
+    }
+
+    @Test
+    @Override
+    public void testFerries() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("route", "ferry");
+        assertTrue(accessParser.getAccess(way).isFerry());
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("foot", "yes");
+        assertTrue(accessParser.getAccess(way).canSkip());
+        way.setTag("bicycle", "permissive");
+        assertTrue(accessParser.getAccess(way).isFerry());
+
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("bicycle", "yes");
+        way.setTag("access", "private");
+        assertTrue(accessParser.getAccess(way).isFerry());
+        way.setTag("bicycle", "designated");
+        assertTrue(accessParser.getAccess(way).isFerry());
+    }
+
+    @Test
+    @Override
+    void privateAndFords() {
+        // upstream default: block private on the bicycle tag; our config sets racingbike_access|block_private=false
+        BikeCommonAccessParser bike = createAccessParser(encodingManager, new PMap());
+        assertFalse(bike.isBlockFords());
+        ReaderNode node = new ReaderNode(1, 1, 1);
+        node.setTag("access", "private");
+        assertFalse(bike.isBarrier(node));
+        node.setTag("bicycle", "private");
+        assertTrue(bike.isBarrier(node));
+
+        bike = createAccessParser(encodingManager, new PMap("block_fords=true|block_private=false"));
+        assertTrue(bike.isBlockFords());
+        assertFalse(bike.isBarrier(node));
+    }
+
+    @Test
+    public void climbfinderOnlyTheBicycleTagRestricts() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "path");
+        way.setTag("access", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("highway", "service");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("vehicle", "no");
+        assertTrue(accessParser.getAccess(way).isWay());
+        way.setTag("bicycle", "no");
+        assertTrue(accessParser.getAccess(way).canSkip());
+
+        ReaderNode node = new ReaderNode(1, -1, -1);
+        node.setTag("barrier", "gate");
+        node.setTag("access", "no");
+        assertFalse(accessParser.isBarrier(node));
+        node.setTag("bicycle", "no");
+        assertTrue(accessParser.isBarrier(node));
     }
 }

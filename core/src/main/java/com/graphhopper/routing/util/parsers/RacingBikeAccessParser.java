@@ -6,7 +6,13 @@ import com.graphhopper.routing.ev.Roundabout;
 import com.graphhopper.routing.ev.VehicleAccess;
 import com.graphhopper.util.PMap;
 
+import java.util.Collections;
+import java.util.List;
+
 public class RacingBikeAccessParser extends BikeCommonAccessParser {
+
+    // climbfinder: only the bicycle tag restricts a racing bike, access and vehicle do not
+    private static final List<String> RESTRICTIONS = Collections.singletonList("bicycle");
 
     public RacingBikeAccessParser(EncodedValueLookup lookup, PMap properties) {
         this(lookup.getBooleanEncodedValue(VehicleAccess.key("racingbike")),
@@ -16,7 +22,7 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
     }
 
     protected RacingBikeAccessParser(BooleanEncodedValue accessEnc, BooleanEncodedValue roundaboutEnc) {
-        super(accessEnc, roundaboutEnc);
+        super(accessEnc, roundaboutEnc, RESTRICTIONS);
 
         barriers.add("kissing_gate");
         barriers.add("stile");
