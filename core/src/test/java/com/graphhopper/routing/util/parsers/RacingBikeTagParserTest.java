@@ -428,6 +428,13 @@ public class RacingBikeTagParserTest extends AbstractBikeTagParserTester {
         assertNotRestricting("restricted");
     }
 
+    @Test
+    public void climbfinderAgriculturalForestryDeliveryDoNotBlock() {
+        assertNotRestricting("agricultural");
+        assertNotRestricting("forestry");
+        assertNotRestricting("delivery");
+    }
+
     private void assertNotRestricting(String bicycleValue) {
         ReaderWay way = new ReaderWay(1);
         way.setTag("highway", "track");

@@ -6,6 +6,7 @@ import com.graphhopper.routing.ev.Roundabout;
 import com.graphhopper.routing.ev.VehicleAccess;
 import com.graphhopper.util.PMap;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -30,5 +31,7 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
 
         // climbfinder: bicycle=restricted does not block a racing bike
         restrictedValues.remove("restricted");
+        // climbfinder: neither do agricultural, forestry and delivery
+        restrictedValues.removeAll(Arrays.asList("agricultural", "forestry", "delivery"));
     }
 }
