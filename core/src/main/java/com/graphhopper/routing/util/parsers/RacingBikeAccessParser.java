@@ -45,7 +45,23 @@ public class RacingBikeAccessParser extends BikeCommonAccessParser {
         WayAccess access = super.getAccess(way);
         if (!access.canSkip() && way.getTag("highway") != null && isBlockedBySacScale(way))
             return WayAccess.CAN_SKIP;
+        if (!access.canSkip() && way.hasTag("highway", "bridleway") && !isTaggedForBicycles(way))
+            return WayAccess.CAN_SKIP;
         return access;
+    }
+
+    /**
+     * climbfinder: a racing bike cannot ride a bridleway unless the way is explicitly tagged for bicycles. Upstream
+     * dropped this rule from the parser (graphhopper/graphhopper#3067) and blocks bridleways in its custom model for
+     * Germany only.
+     */
+    private boolean isTaggedForBicycles(ReaderWay way) {
+        if (way.hasTag("bicycle", "dismount"))
+            return true;
+        for (String value : way.getTag("bicycle", "").split(";"))
+            if (allowedValues.contains(value))
+                return true;
+        return false;
     }
 
     /**
