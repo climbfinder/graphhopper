@@ -252,6 +252,11 @@ public class MatchWaypoints {
         this.profile = hopper.getProfile(options.getProfile());
         if (profile == null)
             throw new IllegalArgumentException("The requested profile '" + options.getProfile() + "' does not exist");
+        // the limit /route enforces (Router.Solver.checkMaxVisitedNodes), checked before matching and the waypoint
+        // search spend CPU under it, not only in the final route
+        int maxVisitedNodes = hopper.getRouterConfig().getMaxVisitedNodes();
+        if (options.getHints().getInt(Parameters.Routing.MAX_VISITED_NODES, maxVisitedNodes) > maxVisitedNodes)
+            throw new IllegalArgumentException("The max_visited_nodes parameter has to be below or equal to:" + maxVisitedNodes);
         this.weightingHints = new PMap(options.getHints());
         weightingHints.putObject(CustomModel.KEY, options.getCustomModel());
         weightingHints.putObject("profile", profile.getName());

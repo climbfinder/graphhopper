@@ -46,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class MatchWaypointsResourceTest {
 
     private static final String DIR = "../target/match-waypoints-test";
+    private static final int MAX_VISITED_NODES = 1_000_000;
     private static final ObjectMapper MAPPER = Jackson.newObjectMapper();
     public static final DropwizardAppExtension<GraphHopperServerConfiguration> app = new DropwizardAppExtension<>(GraphHopperApplication.class, createConfig());
 
@@ -57,6 +58,7 @@ public class MatchWaypointsResourceTest {
                 putObject("graph.location", DIR).
                 putObject("graph.encoded_values", "bike_access, bike_priority, bike_average_speed, road_class, road_environment, surface").
                 putObject("routing.snap_preventions_default", "tunnel, bridge, ferry").
+                putObject("routing.max_visited_nodes", MAX_VISITED_NODES).
                 setProfiles(List.of(TestProfiles.accessSpeedAndPriority("bike", "bike")));
         return config;
     }
@@ -88,7 +90,21 @@ public class MatchWaypointsResourceTest {
     }
 
     private static List<double[]> route(double... latLons) {
+        return route(plannerOptions(), latLons);
+    }
+
+    /**
+     * A route that keeps to roads: cycleways, paths and footways are nearly avoided. The planner's model does not avoid
+     * them, so in places it prefers a cycleway alongside the road this route takes.
+     */
+    private static List<double[]> routeAvoidingPaths(double... latLons) {
         ObjectNode request = plannerOptions();
+        ((ArrayNode) request.get("custom_model").get("priority")).addObject()
+                .put("if", "road_class == CYCLEWAY || road_class == PATH || road_class == FOOTWAY").put("multiply_by", "0.05");
+        return route(request, latLons);
+    }
+
+    private static List<double[]> route(ObjectNode request, double... latLons) {
         ArrayNode points = request.putArray("points");
         for (int i = 0; i < latLons.length; i += 2)
             points.addArray().add(latLons[i + 1]).add(latLons[i]);
@@ -255,6 +271,43 @@ public class MatchWaypointsResourceTest {
             waypointAtTurn |= Math.abs(w[1] - 51.3428212) < 1e-6 && Math.abs(w[0] - 12.3632459) < 1e-6;
         assertTrue(waypointAtTurn, json.get("waypoints").toString());
         assertReproducesMatch(json);
+    }
+
+    @Test
+    public void legAlongAParallelWayWithinToleranceFollowsTheMatch() {
+        // the track keeps to the road; where a cycleway runs alongside it, the planner's model takes the cycleway, a
+        // few metres away, which the tolerance accepts instead of forcing waypoints onto the road
+        JsonNode json = matchWaypoints(gpx(routeAvoidingPaths(51.34810666086739, 12.315150938795853, 51.339839613548556, 12.303277699954316)));
+        assertEquals(2, diagnostics(json).get("legs_within_tolerance").asInt(), json.toString());
+        assertEquals(3, json.get("waypoints").size(), json.toString());
+        assertEquals(0, diagnostics(json).get("forced_count").asInt());
+        JsonNode deviation = diagnostics(json).get("deviation");
+        assertEquals(100.0, deviation.get("route_on_match").get("within_percent").asDouble(), json.toString());
+        assertEquals(100.0, deviation.get("match_on_route").get("within_percent").asDouble(), json.toString());
+    }
+
+    @Test
+    public void removalPassDropsAWaypointTheGreedySearchKept() {
+        // a route can fail at one candidate and succeed further on; the greedy search then keeps a waypoint that the
+        // removal pass finds unnecessary
+        JsonNode json = matchWaypoints(gpx(routeAvoidingPaths(51.36421750568502, 12.400043952131563, 51.32561161786997, 12.415468346429968)));
+        assertEquals(1, diagnostics(json).get("removed_waypoints").asInt(), json.toString());
+        assertEquals(6, json.get("waypoints").size(), json.toString());
+        assertEquals(0, diagnostics(json).get("forced_count").asInt());
+        assertEquals(100.0, diagnostics(json).get("deviation").get("route_on_match").get("within_percent").asDouble(), json.toString());
+    }
+
+    @Test
+    public void maxVisitedNodesAboveTheServerLimitIsRejectedBeforeMatching() {
+        // the GPX lies far outside the graph: had matching started, the request would fail with another message
+        ObjectNode body = plannerOptions();
+        body.put("gpx", gpx(List.of(new double[]{-60.0, -30.0}, new double[]{-60.001, -30.001})));
+        body.put("max_visited_nodes", MAX_VISITED_NODES + 1);
+        assertBadRequest(body, "The max_visited_nodes parameter has to be below or equal to:" + MAX_VISITED_NODES);
+
+        body = validBody();
+        body.put("max_visited_nodes", MAX_VISITED_NODES + 1);
+        assertBadRequest(body, "The max_visited_nodes parameter has to be below or equal to:" + MAX_VISITED_NODES);
     }
 
     @Test
