@@ -81,9 +81,15 @@ public final class RouteDeviation {
     }
 
     public static Coverage coverage(PointList a, PointList b, double toleranceMeters, double stepMeters) {
-        if (a.size() < 2 || b.size() < 2)
+        if (b.size() < 2)
             throw new IllegalArgumentException("coverage needs two lines of at least two points, got " + a.size() + " and " + b.size());
-        LineIndex index = new LineIndex(b);
+        return coverage(a, new LineIndex(b), toleranceMeters, stepMeters);
+    }
+
+    /** As {@link #coverage(PointList, PointList, double, double)}, against a line that is already indexed. */
+    public static Coverage coverage(PointList a, LineIndex index, double toleranceMeters, double stepMeters) {
+        if (a.size() < 2)
+            throw new IllegalArgumentException("coverage needs a line of at least two points, got " + a.size());
         List<Double> distances = new ArrayList<>();
         distances.add(index.distance(a.getLat(0), a.getLon(0)));
         for (int i = 1; i < a.size(); i++) {
@@ -123,13 +129,15 @@ public final class RouteDeviation {
     }
 
     /** The segments of a line in a grid, for exact nearest-segment distances. */
-    private static final class LineIndex {
+    public static final class LineIndex {
         private final PointList line;
         private final Map<Long, List<Integer>> cells = new HashMap<>();
         private final double minCellMeters;
         private int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
 
-        LineIndex(PointList line) {
+        public LineIndex(PointList line) {
+            if (line.size() < 2)
+                throw new IllegalArgumentException("A line index needs at least two points, got " + line.size());
             this.line = line;
             double maxAbsLat = 0;
             for (int i = 0; i < line.size() - 1; i++) {
@@ -158,7 +166,7 @@ public final class RouteDeviation {
         }
 
         /** Searches square rings of cells around the point until no further ring can hold anything nearer. */
-        double distance(double lat, double lon) {
+        public double distance(double lat, double lon) {
             int px = cell(lon), py = cell(lat);
             int reach = Math.max(0, Math.max(Math.max(px - minX, maxX - px), Math.max(py - minY, maxY - py)));
             Set<Integer> seen = new HashSet<>();

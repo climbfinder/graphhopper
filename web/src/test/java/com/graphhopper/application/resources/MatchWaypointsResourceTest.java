@@ -163,6 +163,9 @@ public class MatchWaypointsResourceTest {
         assertEquals(2, json.get("waypoints").size(), json.toString());
         assertEquals(0, diagnostics(json).get("forced_count").asInt());
         assertTrue(diagnostics(json).get("route_evaluations").asInt() > 0);
+        // nothing to trim on a route the router itself takes
+        assertEquals(0, diagnostics(json).get("trimmed_spur_count").asInt());
+        assertEquals(diagnostics(json).get("match_length_before_trim_m").asDouble(), diagnostics(json).get("match_length_after_trim_m").asDouble(), 1e-9);
         assertReproducesMatch(json);
     }
 
@@ -196,10 +199,33 @@ public class MatchWaypointsResourceTest {
     }
 
     @Test
-    public void turningBackOnAStreetGivesForcedWaypointsWithReason() throws Exception {
-        // the track rides into a street and back; with pass_through the router will not turn back on it
+    public void spurBeyondWhereTheTrackTurnsIsTrimmed() throws Exception {
+        // the track turns back about 30 m into a street; the matcher rides on to the street's far end, ~120 m further
         String gpx = new String(getClass().getResourceAsStream("/tour4-with-uturn.gpx").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         JsonNode json = matchWaypoints(gpx);
+        JsonNode spurs = diagnostics(json).get("trimmed_spurs");
+        assertEquals(1, spurs.size(), json.toString());
+        assertEquals(51.3428212, spurs.get(0).get("lat").asDouble(), 1e-6);
+        assertTrue(spurs.get(0).get("apex_distance_m").asDouble() > 15);
+        assertEquals(diagnostics(json).get("match_length_before_trim_m").asDouble() - spurs.get(0).get("length_m").asDouble(),
+                diagnostics(json).get("match_length_after_trim_m").asDouble(), 0.5);
+        assertEquals(diagnostics(json).get("match_length_after_trim_m").asDouble(), json.get("match").get("distance").asDouble(), 1e-9);
+        assertEquals(0, diagnostics(json).get("forced_count").asInt());
+        assertReproducesMatch(json);
+    }
+
+    @Test
+    public void turningBackOnAStreetTheRouterAvoidsGivesForcedWaypointsWithReason() {
+        // the track rides to the far end of a street the router would not take and back the same way, so nothing is
+        // trimmed; reaching that end needs a waypoint on the street itself, and with pass_through the router will not
+        // turn back after it
+        double[][] latLons = {{51.343324, 12.359187}, {51.3437956, 12.3613374}, {51.3440952, 12.3626171}, {51.34384, 12.36274},
+                {51.3428212, 12.3632459}, {51.34384, 12.36274}, {51.3440952, 12.3626171}, {51.3450111, 12.3621602}, {51.345231858, 12.362049776}};
+        List<double[]> line = new ArrayList<>();
+        for (double[] p : latLons)
+            line.add(new double[]{p[1], p[0]});
+        JsonNode json = matchWaypoints(gpx(line));
+        assertEquals(0, diagnostics(json).get("trimmed_spur_count").asInt(), json.toString());
         JsonNode forced = diagnostics(json).get("forced_waypoints");
         assertTrue(forced.size() > 0, json.toString());
         assertEquals(forced.size(), diagnostics(json).get("forced_count").asInt());
@@ -211,6 +237,24 @@ public class MatchWaypointsResourceTest {
         }
         // the deviation of the final route from the match is reported, not hidden
         assertTrue(diagnostics(json).get("deviation").get("route_on_match").get("within_percent").asDouble() < 100, json.toString());
+    }
+
+    @Test
+    public void outAndBackThatTheTrackRidesIsKept() {
+        // the track rides to the far end of a street and back the same way, like an out-and-back climb
+        List<double[]> out = route(51.343324, 12.359187, 51.3428212, 12.3632459);
+        List<double[]> outAndBack = new ArrayList<>(out);
+        for (int i = out.size() - 2; i >= 0; i--)
+            outAndBack.add(out.get(i));
+        JsonNode json = matchWaypoints(gpx(outAndBack));
+        assertEquals(0, diagnostics(json).get("trimmed_spur_count").asInt(), json.toString());
+        assertEquals(0, diagnostics(json).get("forced_count").asInt());
+        // a waypoint on the node where the track turns lets the router turn there too
+        boolean waypointAtTurn = false;
+        for (double[] w : waypoints(json))
+            waypointAtTurn |= Math.abs(w[1] - 51.3428212) < 1e-6 && Math.abs(w[0] - 12.3632459) < 1e-6;
+        assertTrue(waypointAtTurn, json.get("waypoints").toString());
+        assertReproducesMatch(json);
     }
 
     @Test

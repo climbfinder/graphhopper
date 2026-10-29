@@ -123,6 +123,34 @@ public class MatchWaypoints {
         }
     }
 
+    /** An out-and-back spur removed from the match. */
+    public static final class TrimmedSpur {
+        private final GHPoint apex;
+        private final double apexDistance;
+        private final double length;
+
+        TrimmedSpur(GHPoint apex, double apexDistance, double length) {
+            this.apex = apex;
+            this.apexDistance = apexDistance;
+            this.length = length;
+        }
+
+        /** Where the matched path turned back. */
+        public GHPoint getApex() {
+            return apex;
+        }
+
+        /** Distance from the turning point to the GPX, in metres. */
+        public double getApexDistance() {
+            return apexDistance;
+        }
+
+        /** Length of the removed part, out and back, in metres. */
+        public double getLength() {
+            return length;
+        }
+    }
+
     public static final class Result {
         private final List<Waypoint> waypoints;
         private final int routeEvaluations;
@@ -130,9 +158,16 @@ public class MatchWaypoints {
         private final int skippedCandidates;
         private final int removedWaypoints;
         private final int legsWithinTolerance;
+        private final List<TrimmedSpur> trimmedSpurs;
+        private final double matchLengthBeforeTrim;
+        private final PointList matchPoints;
 
-        Result(List<Waypoint> waypoints, int routeEvaluations, int candidates, int skippedCandidates, int removedWaypoints, int legsWithinTolerance) {
+        Result(List<Waypoint> waypoints, int routeEvaluations, int candidates, int skippedCandidates, int removedWaypoints,
+               int legsWithinTolerance, List<TrimmedSpur> trimmedSpurs, double matchLengthBeforeTrim, PointList matchPoints) {
             this.legsWithinTolerance = legsWithinTolerance;
+            this.trimmedSpurs = trimmedSpurs;
+            this.matchLengthBeforeTrim = matchLengthBeforeTrim;
+            this.matchPoints = matchPoints;
             this.waypoints = waypoints;
             this.routeEvaluations = routeEvaluations;
             this.candidates = candidates;
@@ -172,6 +207,21 @@ public class MatchWaypoints {
          */
         public int getLegsWithinTolerance() {
             return legsWithinTolerance;
+        }
+
+        /** The out-and-back spurs removed from the match before the waypoint search, see {@link SpurTrimmer}. */
+        public List<TrimmedSpur> getTrimmedSpurs() {
+            return trimmedSpurs;
+        }
+
+        /** Length of the matched path before the spurs were removed, in metres along its geometry. */
+        public double getMatchLengthBeforeTrim() {
+            return matchLengthBeforeTrim;
+        }
+
+        /** The matched path after removing the spurs: the path the waypoints reproduce. */
+        public PointList getMatchPoints() {
+            return matchPoints;
         }
 
         /** Waypoints the removal pass dropped after the greedy search. */
@@ -221,11 +271,19 @@ public class MatchWaypoints {
         return mapMatching.match(observations);
     }
 
-    public Result reconstruct(MatchResult matchResult) {
+    /**
+     * @param gpx the track that was matched, to tell the spurs the matcher added from the ones the track rides
+     */
+    public Result reconstruct(MatchResult matchResult, PointList gpx) {
         Twins twins = new Twins();
         List<Stretch> stretches = toStretches(matchResult, twins);
         if (stretches.isEmpty())
             throw new IllegalArgumentException("The GPX track matches no road stretch; it needs at least two points that are further apart");
+        double lengthBeforeTrim = RouteDeviation.length(new MatchLine(stretches).points);
+        List<TrimmedSpur> trimmedSpurs = new ArrayList<>();
+        if (gpx.size() >= 2)
+            for (SpurTrimmer.TrimmedSpur spur : SpurTrimmer.trim(stretches, new RouteDeviation.LineIndex(gpx)))
+                trimmedSpurs.add(new TrimmedSpur(spur.apex, spur.apexDistance, spur.length));
         int[] keys = new int[stretches.size()];
         boolean[] allowed = new boolean[stretches.size()];
         for (int i = 0; i < keys.length; i++) {
@@ -269,7 +327,8 @@ public class MatchWaypoints {
                 legsWithinTolerance++;
             incoming = leg.finalEdge;
         }
-        return new Result(waypoints, evaluator.evaluations, candidates.size(), skipped, greedy.size() - kept.size(), legsWithinTolerance);
+        return new Result(waypoints, evaluator.evaluations, candidates.size(), skipped, greedy.size() - kept.size(), legsWithinTolerance,
+                trimmedSpurs, lengthBeforeTrim, matchLine.points);
     }
 
     /**

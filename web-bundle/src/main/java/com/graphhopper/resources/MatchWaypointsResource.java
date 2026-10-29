@@ -113,7 +113,7 @@ public class MatchWaypointsResource {
         matchWatch.stop();
 
         StopWatch reconstructWatch = new StopWatch().start();
-        MatchWaypoints.Result waypoints = matchWaypoints.reconstruct(match);
+        MatchWaypoints.Result waypoints = matchWaypoints.reconstruct(match, toPointList(observations));
         reconstructWatch.stop();
 
         StopWatch routeWatch = new StopWatch().start();
@@ -128,20 +128,23 @@ public class MatchWaypointsResource {
         boolean elevation = hints.getBool("elevation", false);
         boolean pointsEncoded = hints.getBool("points_encoded", true);
         double pointsEncodedMultiplier = hints.getDouble("points_encoded_multiplier", 1e5);
-        PointList matchPoints = match.getMergedPath().calcPoints();
+        PointList matchPoints = waypoints.getMatchPoints();
         total.stop();
 
         ObjectNode json = objectMapper.createObjectNode();
         json.set("route", ResponsePathSerializer.jsonObject(route, new ResponsePathSerializer.Info(config.getCopyrights(), Math.round(total.getMillisDouble()), osmDate),
                 instructions, calcPoints, elevation, pointsEncoded, pointsEncodedMultiplier));
         ObjectNode matchJson = json.putObject("match");
-        matchJson.put("distance", match.getMatchLength());
+        // the matched path after removing the spurs the GPX does not ride; that is the path the waypoints reproduce
+        matchJson.put("distance", round(RouteDeviation.length(matchPoints), 1));
+        matchJson.put("distance_before_trim", round(waypoints.getMatchLengthBeforeTrim(), 1));
         matchJson.put("gpx_distance", match.getGpxEntriesLength());
         matchJson.put("points_encoded", pointsEncoded);
+        boolean matchElevation = elevation && matchPoints.is3D();
         if (pointsEncoded)
-            matchJson.put("points", ResponsePathSerializer.encodePolyline(matchPoints, elevation, pointsEncodedMultiplier));
+            matchJson.put("points", ResponsePathSerializer.encodePolyline(matchPoints, matchElevation, pointsEncodedMultiplier));
         else
-            matchJson.putPOJO("points", matchPoints.toLineString(elevation));
+            matchJson.putPOJO("points", matchPoints.toLineString(matchElevation));
         ArrayNode waypointsJson = json.putArray("waypoints");
         for (MatchWaypoints.Waypoint waypoint : waypoints.getWaypoints())
             waypointsJson.addObject().put("lat", waypoint.getPoint().lat).put("lon", waypoint.getPoint().lon).put("forced", waypoint.isForced());
@@ -173,6 +176,13 @@ public class MatchWaypointsResource {
         if (observations.size() < 2)
             throw new IllegalArgumentException("The GPX track needs at least two track points, got " + observations.size());
         return observations;
+    }
+
+    private static PointList toPointList(List<Observation> observations) {
+        PointList points = new PointList(observations.size(), false);
+        for (Observation observation : observations)
+            points.add(observation.getPoint().lat, observation.getPoint().lon);
+        return points;
     }
 
     private static double readGpsAccuracy(JsonNode node) {
@@ -248,6 +258,21 @@ public class MatchWaypointsResource {
                     .put("message", message(waypoint.getForcedReason()));
         }
         diagnostics.put("forced_count", forced.size());
+
+        ArrayNode spurs = diagnostics.putArray("trimmed_spurs");
+        double trimmedMeters = 0;
+        for (MatchWaypoints.TrimmedSpur spur : waypoints.getTrimmedSpurs()) {
+            spurs.addObject()
+                    .put("lat", spur.getApex().lat)
+                    .put("lon", spur.getApex().lon)
+                    .put("length_m", round(spur.getLength(), 1))
+                    .put("apex_distance_m", round(spur.getApexDistance(), 1));
+            trimmedMeters += spur.getLength();
+        }
+        diagnostics.put("trimmed_spur_count", spurs.size());
+        diagnostics.put("trimmed_spur_m", round(trimmedMeters, 1));
+        diagnostics.put("match_length_before_trim_m", round(waypoints.getMatchLengthBeforeTrim(), 1));
+        diagnostics.put("match_length_after_trim_m", round(RouteDeviation.length(matchPoints), 1));
 
         PointList routePoints = route.getBest().getPoints();
         ObjectNode deviation = diagnostics.putObject("deviation");
