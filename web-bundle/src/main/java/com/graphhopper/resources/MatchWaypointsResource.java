@@ -233,6 +233,7 @@ public class MatchWaypointsResource {
         diagnostics.put("skipped_candidates", waypoints.getSkippedCandidates());
         diagnostics.put("waypoints", waypoints.getWaypoints().size());
         diagnostics.put("removed_waypoints", waypoints.getRemovedWaypoints());
+        diagnostics.put("legs_within_tolerance", waypoints.getLegsWithinTolerance());
         ArrayNode forced = diagnostics.putArray("forced_waypoints");
         List<MatchWaypoints.Waypoint> list = waypoints.getWaypoints();
         for (int i = 0; i < list.size(); i++) {

@@ -55,10 +55,11 @@ import static com.graphhopper.util.EdgeIterator.NO_EDGE;
  * <p>
  * The track is map-matched first. Candidate waypoints are the start, the middle of every matched road stretch of at
  * least {@link #MIN_CANDIDATE_STRETCH_METERS}, every place where the match turns back on itself, and the end. From the
- * current waypoint an exponential and then a binary search finds the farthest candidate that the router reaches along
- * exactly the matched edges (same edges, same directions). When not even the next candidate can be reached that way,
- * that candidate becomes a forced waypoint. A removal pass then drops every waypoint whose neighbours already route
- * along the match.
+ * current waypoint an exponential and then a binary search finds the farthest candidate whose leg follows the match:
+ * along exactly the matched edges (same edges, same directions, twins counted as one), or otherwise within
+ * {@link #LEG_TOLERANCE_METERS} of it, see {@link #withinTolerance}. When not even the next candidate can be reached
+ * that way, that candidate becomes a forced waypoint. A removal pass then drops every waypoint whose neighbours
+ * already route along the match.
  * <p>
  * Match and reconstruction use one weighting: the request's profile merged with its custom model, created the same
  * way {@code /route} creates it. Each leg is evaluated the way {@code /route} computes a leg of a via route with the
@@ -72,6 +73,16 @@ public class MatchWaypoints {
      * candidate in their middle.
      */
     public static final double MIN_CANDIDATE_STRETCH_METERS = 15;
+
+    /**
+     * A leg whose edges differ from the match still counts as following it when every point of the leg lies within
+     * this distance of the matched stretch and vice versa (the criterion of the prototype), ...
+     */
+    public static final double LEG_TOLERANCE_METERS = 15;
+    /** ... and its length differs from the matched stretch by at most this many metres or ... */
+    public static final double LEG_LENGTH_TOLERANCE_METERS = 20;
+    /** ... this fraction of the matched stretch, whichever is larger. */
+    public static final double LEG_LENGTH_TOLERANCE_FRACTION = 0.01;
 
     public enum ForcedReason {
         /** The router finds no path at all from the previous waypoint to this one. */
@@ -118,8 +129,10 @@ public class MatchWaypoints {
         private final int candidates;
         private final int skippedCandidates;
         private final int removedWaypoints;
+        private final int legsWithinTolerance;
 
-        Result(List<Waypoint> waypoints, int routeEvaluations, int candidates, int skippedCandidates, int removedWaypoints) {
+        Result(List<Waypoint> waypoints, int routeEvaluations, int candidates, int skippedCandidates, int removedWaypoints, int legsWithinTolerance) {
+            this.legsWithinTolerance = legsWithinTolerance;
             this.waypoints = waypoints;
             this.routeEvaluations = routeEvaluations;
             this.candidates = candidates;
@@ -151,6 +164,14 @@ public class MatchWaypoints {
         /** Candidates dropped because their point snaps to another edge (for example under a snap prevention). */
         public int getSkippedCandidates() {
             return skippedCandidates;
+        }
+
+        /**
+         * Legs of the result that take other edges than the match but stay within the tolerance of it, for example
+         * the other carriageway of a dual carriageway.
+         */
+        public int getLegsWithinTolerance() {
+            return legsWithinTolerance;
         }
 
         /** Waypoints the removal pass dropped after the greedy search. */
@@ -212,7 +233,8 @@ public class MatchWaypoints {
             allowed[i] = stretches.get(i).allowed;
         }
 
-        List<Candidate> rawCandidates = createCandidates(matchResult, stretches);
+        MatchLine matchLine = new MatchLine(stretches);
+        List<Candidate> rawCandidates = createCandidates(matchResult, stretches, matchLine);
         List<Candidate> candidates = new ArrayList<>();
         List<Snap> snaps = new ArrayList<>();
         int skipped = 0;
@@ -232,19 +254,22 @@ public class MatchWaypoints {
         }
 
         QueryGraph queryGraph = QueryGraph.create(hopper.getBaseGraph(), snaps);
-        Evaluator evaluator = new Evaluator(queryGraph, candidates, keys, allowed, twins);
+        Evaluator evaluator = new Evaluator(queryGraph, candidates, keys, allowed, twins, matchLine);
         List<Integer> greedy = greedy(evaluator, candidates.size());
         List<Integer> kept = removeRedundant(evaluator, greedy);
 
         List<Waypoint> waypoints = new ArrayList<>(kept.size());
         waypoints.add(new Waypoint(candidates.get(kept.get(0)).point, null));
         int incoming = NO_EDGE;
+        int legsWithinTolerance = 0;
         for (int i = 1; i < kept.size(); i++) {
             Evaluation leg = evaluator.evaluate(kept.get(i - 1), kept.get(i), incoming);
             waypoints.add(new Waypoint(candidates.get(kept.get(i)).point, leg.followsMatch ? null : leg.reason));
+            if (leg.withinTolerance)
+                legsWithinTolerance++;
             incoming = leg.finalEdge;
         }
-        return new Result(waypoints, evaluator.evaluations, candidates.size(), skipped, greedy.size() - kept.size());
+        return new Result(waypoints, evaluator.evaluations, candidates.size(), skipped, greedy.size() - kept.size(), legsWithinTolerance);
     }
 
     /**
@@ -345,7 +370,7 @@ public class MatchWaypoints {
     /**
      * Candidates in path order: start, the middle of each long enough stretch, each turning point, end.
      */
-    private List<Candidate> createCandidates(MatchResult matchResult, List<Stretch> stretches) {
+    private List<Candidate> createCandidates(MatchResult matchResult, List<Stretch> stretches, MatchLine matchLine) {
         QueryGraph matchGraph = (QueryGraph) matchResult.getGraph();
         NodeAccess nodeAccess = matchGraph.getNodeAccess();
         List<Candidate> candidates = new ArrayList<>();
@@ -358,13 +383,13 @@ public class MatchWaypoints {
                 // the match turns back here; a waypoint on the turning node lets the router turn back too
                 int node = stretch.baseNode;
                 if (!matchGraph.isVirtualNode(node))
-                    candidates.add(Candidate.atTurn(new GHPoint(nodeAccess.getLat(node), nodeAccess.getLon(node)), node, i));
+                    candidates.add(Candidate.atTurn(new GHPoint(nodeAccess.getLat(node), nodeAccess.getLon(node)), node, i, matchLine.stretchStart[i]));
             }
             if (stretch.length >= MIN_CANDIDATE_STRETCH_METERS)
-                candidates.add(Candidate.onStretch(stretch.middle(), GHUtility.getEdgeFromEdgeKey(stretch.edgeKey), i));
+                candidates.add(Candidate.onStretch(stretch.middle(), GHUtility.getEdgeFromEdgeKey(stretch.edgeKey), i, matchLine.stretchStart[i] + stretch.length / 2));
         }
         PointList end = stretches.get(last).geometry;
-        candidates.add(Candidate.atEnd(new GHPoint(end.getLat(end.size() - 1), end.getLon(end.size() - 1)), last));
+        candidates.add(Candidate.atEnd(new GHPoint(end.getLat(end.size() - 1), end.getLon(end.size() - 1)), last, matchLine.length()));
         return candidates;
     }
 
@@ -458,10 +483,13 @@ public class MatchWaypoints {
         final int edge;
         /** The tower node the point must snap to, or -1. */
         final int towerNode;
+        /** Distance along the matched path, in metres. */
+        final double along;
         Snap snap;
 
-        private Candidate(GHPoint point, int firstStretch, int lastStretch, int edge, int towerNode) {
+        private Candidate(GHPoint point, int firstStretch, int lastStretch, int edge, int towerNode, double along) {
             this.point = point;
+            this.along = along;
             this.firstStretch = firstStretch;
             this.lastStretch = lastStretch;
             this.edge = edge;
@@ -469,19 +497,19 @@ public class MatchWaypoints {
         }
 
         static Candidate atStart(GHPoint point) {
-            return new Candidate(point, 0, 0, -1, -1);
+            return new Candidate(point, 0, 0, -1, -1, 0);
         }
 
-        static Candidate atEnd(GHPoint point, int lastStretch) {
-            return new Candidate(point, lastStretch, lastStretch, -1, -1);
+        static Candidate atEnd(GHPoint point, int lastStretch, double along) {
+            return new Candidate(point, lastStretch, lastStretch, -1, -1, along);
         }
 
-        static Candidate onStretch(GHPoint point, int edge, int stretch) {
-            return new Candidate(point, stretch, stretch, edge, -1);
+        static Candidate onStretch(GHPoint point, int edge, int stretch, double along) {
+            return new Candidate(point, stretch, stretch, edge, -1, along);
         }
 
-        static Candidate atTurn(GHPoint point, int towerNode, int stretchAfterTurn) {
-            return new Candidate(point, stretchAfterTurn, stretchAfterTurn - 1, -1, towerNode);
+        static Candidate atTurn(GHPoint point, int towerNode, int stretchAfterTurn, double along) {
+            return new Candidate(point, stretchAfterTurn, stretchAfterTurn - 1, -1, towerNode, along);
         }
 
         /**
@@ -498,12 +526,19 @@ public class MatchWaypoints {
 
     static final class Evaluation {
         final boolean followsMatch;
+        /** The leg follows the match within the tolerance but not along exactly its edges. */
+        final boolean withinTolerance;
         final ForcedReason reason;
         /** The last edge of the leg, which pass_through keeps the next leg from turning back over; NO_EDGE if none. */
         final int finalEdge;
 
         Evaluation(boolean followsMatch, ForcedReason reason, int finalEdge) {
+            this(followsMatch, false, reason, finalEdge);
+        }
+
+        Evaluation(boolean followsMatch, boolean withinTolerance, ForcedReason reason, int finalEdge) {
             this.followsMatch = followsMatch;
+            this.withinTolerance = withinTolerance;
             this.reason = reason;
             this.finalEdge = finalEdge;
         }
@@ -520,10 +555,12 @@ public class MatchWaypoints {
         private final boolean[] matchAllowed;
         private final FlexiblePathCalculator pathCalculator;
         private final Twins twins;
+        private final MatchLine matchLine;
         private final Map<Integer, Map<Long, Evaluation>> cacheByIncoming = new HashMap<>();
         int evaluations;
 
-        Evaluator(QueryGraph queryGraph, List<Candidate> candidates, int[] matchKeys, boolean[] matchAllowed, Twins twins) {
+        Evaluator(QueryGraph queryGraph, List<Candidate> candidates, int[] matchKeys, boolean[] matchAllowed, Twins twins, MatchLine matchLine) {
+            this.matchLine = matchLine;
             this.matchAllowed = matchAllowed;
             this.queryGraph = queryGraph;
             this.twins = twins;
@@ -569,6 +606,8 @@ public class MatchWaypoints {
             int[] actual = collapse(path.calcEdges());
             if (Arrays.equals(expected, actual))
                 return new Evaluation(true, null, finalEdge);
+            if (withinTolerance(path.calcPoints(), matchLine.between(from.along, to.along)))
+                return new Evaluation(true, true, null, finalEdge);
             return new Evaluation(false, reason(from, to), finalEdge);
         }
 
@@ -640,6 +679,76 @@ public class MatchWaypoints {
             GHPoint middleA = middle(a.fetchWayGeometry(FetchMode.ALL));
             GHPoint middleB = middle(b.fetchWayGeometry(FetchMode.ALL));
             return DistanceCalcEarth.DIST_EARTH.calcDist(middleA.lat, middleA.lon, middleB.lat, middleB.lon) <= MAX_MIDDLE_DISTANCE_METERS;
+        }
+    }
+
+    /**
+     * Whether a leg follows the matched stretch geometrically: lengths within the length tolerance and every point of
+     * each line (densified to 5 m) within {@link #LEG_TOLERANCE_METERS} of the other.
+     */
+    public static boolean withinTolerance(PointList leg, PointList matched) {
+        if (leg.size() < 2 || matched.size() < 2)
+            return false;
+        double legLength = RouteDeviation.length(leg), matchedLength = RouteDeviation.length(matched);
+        if (Math.abs(legLength - matchedLength) > Math.max(LEG_LENGTH_TOLERANCE_METERS, LEG_LENGTH_TOLERANCE_FRACTION * matchedLength))
+            return false;
+        return RouteDeviation.coverage(leg, matched, LEG_TOLERANCE_METERS, 5).getMaxMeters() <= LEG_TOLERANCE_METERS
+                && RouteDeviation.coverage(matched, leg, LEG_TOLERANCE_METERS, 5).getMaxMeters() <= LEG_TOLERANCE_METERS;
+    }
+
+    /** The matched path as one line, to cut out the stretch between two candidates. */
+    static final class MatchLine {
+        final PointList points = new PointList();
+        /** Distance along the line at each point. */
+        private double[] along = new double[16];
+        /** Distance along the line where each stretch starts. */
+        final double[] stretchStart;
+
+        MatchLine(List<Stretch> stretches) {
+            stretchStart = new double[stretches.size()];
+            for (int s = 0; s < stretches.size(); s++) {
+                PointList geometry = stretches.get(s).geometry;
+                stretchStart[s] = points.isEmpty() ? 0 : along[points.size() - 1];
+                // consecutive stretches share their junction point
+                for (int i = points.isEmpty() ? 0 : 1; i < geometry.size(); i++)
+                    add(geometry.getLat(i), geometry.getLon(i));
+            }
+        }
+
+        private void add(double lat, double lon) {
+            int n = points.size();
+            double d = n == 0 ? 0 : along[n - 1] + DistanceCalcEarth.DIST_EARTH.calcDist(points.getLat(n - 1), points.getLon(n - 1), lat, lon);
+            if (n == along.length)
+                along = Arrays.copyOf(along, n * 2);
+            along[n] = d;
+            points.add(lat, lon);
+        }
+
+        double length() {
+            return points.isEmpty() ? 0 : along[points.size() - 1];
+        }
+
+        /** The part of the line from one distance along it to another. */
+        PointList between(double from, double to) {
+            PointList result = new PointList();
+            int n = points.size();
+            int i = 1;
+            while (i < n - 1 && along[i] < from)
+                i++;
+            addAt(result, from, i);
+            for (; i < n && along[i] < to; i++)
+                if (along[i] > from)
+                    result.add(points.getLat(i), points.getLon(i));
+            addAt(result, to, Math.min(Math.max(i, 1), n - 1));
+            return result;
+        }
+
+        /** Adds the point at distance d, which lies on segment i-1 -> i. */
+        private void addAt(PointList result, double d, int i) {
+            double segment = along[i] - along[i - 1];
+            double f = segment <= 0 ? 0 : Math.max(0, Math.min(1, (d - along[i - 1]) / segment));
+            result.add(points.getLat(i - 1) + f * (points.getLat(i) - points.getLat(i - 1)),
+                    points.getLon(i - 1) + f * (points.getLon(i) - points.getLon(i - 1)));
         }
     }
 }
