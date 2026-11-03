@@ -287,21 +287,23 @@ public class MatchWaypoints {
      */
     public Result reconstruct(MatchResult matchResult, PointList gpx) {
         RouteDeviation.LineIndex gpxIndex = gpx.size() >= 2 ? new RouteDeviation.LineIndex(gpx) : null;
-        Set<Integer> uTurnApexes = new HashSet<>();
-        Result result = reconstruct(matchResult, gpxIndex, node -> false, uTurnApexes);
-        if (gpxIndex == null || uTurnApexes.isEmpty())
+        Set<Integer> uTurnReturns = new HashSet<>();
+        Result result = reconstruct(matchResult, gpxIndex, edgeKey -> false, uTurnReturns);
+        if (gpxIndex == null || uTurnReturns.isEmpty())
             return result;
         // A leg was forced because the router does not turn where the match does. Where the GPX rides that retrace
         // one way only, the ride does not turn there either (see SpurTrimmer): trim those retraces and search again.
-        Result retry = reconstruct(matchResult, gpxIndex, uTurnApexes::contains, new HashSet<>());
+        Result retry = reconstruct(matchResult, gpxIndex, uTurnReturns::contains, new HashSet<>());
         return retry.withRouteEvaluations(result.routeEvaluations + retry.routeEvaluations);
     }
 
     /**
-     * @param trimOneWayAt the turning nodes at which a retrace the GPX rides one way only is trimmed
-     * @param uTurnApexes  receives the turning nodes of the match inside legs forced with {@link ForcedReason#U_TURN}
+     * @param trimOneWayAt the turns (by the edge key of the stretch the match turns back on) at which a retrace the GPX
+     *                     rides one way only is trimmed
+     * @param uTurnReturns receives those edge keys for the turns of the match inside legs forced with
+     *                     {@link ForcedReason#U_TURN}
      */
-    private Result reconstruct(MatchResult matchResult, RouteDeviation.LineIndex gpx, IntPredicate trimOneWayAt, Set<Integer> uTurnApexes) {
+    private Result reconstruct(MatchResult matchResult, RouteDeviation.LineIndex gpx, IntPredicate trimOneWayAt, Set<Integer> uTurnReturns) {
         Twins twins = new Twins();
         List<Stretch> stretches = toStretches(matchResult, twins);
         if (stretches.isEmpty())
@@ -355,7 +357,7 @@ public class MatchWaypoints {
                 Candidate from = candidates.get(kept.get(i - 1)), to = candidates.get(kept.get(i));
                 for (int s = Math.max(0, from.firstStretch - 1) + 1; s <= to.lastStretch; s++)
                     if (keys[s] == GHUtility.reverseEdgeKey(keys[s - 1]))
-                        uTurnApexes.add(stretches.get(s).baseNode);
+                        uTurnReturns.add(keys[s]);
             }
             if (leg.withinTolerance)
                 legsWithinTolerance++;

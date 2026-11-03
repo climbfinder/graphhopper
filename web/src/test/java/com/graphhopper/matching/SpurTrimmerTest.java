@@ -112,7 +112,7 @@ public class SpurTrimmerTest {
         // rides it down to the main road; the match reaches the main road elsewhere and rides up the side street and
         // back to visit that far end, where the ride does not turn
         List<MatchWaypoints.Stretch> path = pathWithSpur(100);
-        List<SpurTrimmer.TrimmedSpur> trimmed = SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), node -> true);
+        List<SpurTrimmer.TrimmedSpur> trimmed = SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), key -> key == 11);
         assertEquals(1, trimmed.size());
         assertEquals(200, trimmed.get(0).length, 0.5);
         assertEquals(0, trimmed.get(0).apexDistance, 0.5);
@@ -126,7 +126,7 @@ public class SpurTrimmerTest {
         // north-west; the match rides up and back down again, a turn the ride does not make either
         PointList gpx = line(50.0, 4.000, 50.0, 4.001, north(100), 4.001, north(300), 3.998);
         List<MatchWaypoints.Stretch> path = pathWithSpur(100);
-        List<SpurTrimmer.TrimmedSpur> trimmed = SpurTrimmer.trim(path, gpx(gpx), node -> true);
+        List<SpurTrimmer.TrimmedSpur> trimmed = SpurTrimmer.trim(path, gpx(gpx), key -> key == 11);
         assertEquals(1, trimmed.size());
         assertEquals(200, trimmed.get(0).length, 0.5);
         assertEquals(List.of(2, 4), List.of(keys(path)[0], keys(path)[1]));
@@ -135,11 +135,15 @@ public class SpurTrimmerTest {
 
     @Test
     public void retraceTheGpxRidesOneWayIsKeptUnlessItsTurnIsNamed() {
-        // while the waypoints can reproduce the retrace it stays: it covers the part of the side street the GPX rides
+        // while the waypoints can reproduce the retrace it stays: it covers the part of the side street the GPX rides;
+        // the turn is named by the edge key of the stretch the match turns back on, 11 (the side street southwards)
         List<MatchWaypoints.Stretch> path = pathWithSpur(100);
         assertEquals(0, SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK)).size());
-        assertEquals(0, SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), node -> node == 7).size());
+        assertEquals(0, SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), key -> key == 10).size());
+        assertEquals(0, SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), key -> key == 13).size());
         assertEquals(4, path.size());
+        assertEquals(1, SpurTrimmer.trim(path, gpx(GPX_IN_FROM_OFF_THE_NETWORK), key -> key == 11).size());
+        assertEquals(2, path.size());
     }
 
     @Test

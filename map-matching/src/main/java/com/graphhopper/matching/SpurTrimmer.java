@@ -44,8 +44,8 @@ import java.util.function.IntPredicate;
  * Where the GPX rides it one way only, the ride does not turn there: it comes in from, or leaves for, a stretch the
  * match does not use (missing from the network, or avoided by the matcher), and the match rides out and back to visit
  * the point. Such a retrace is kept as long as the waypoints can reproduce it, since it still covers what the GPX
- * rides. Where they cannot (with {@code pass_through} the router does not turn at a waypoint that has a way onwards,
- * so the next leg loops), {@link MatchWaypoints} names the turning node and the retrace is trimmed there, one pair at
+ * rides. Where they cannot (with {@code pass_through} the router avoids turning back at a waypoint that has a way
+ * onwards, so the next leg loops), {@link MatchWaypoints} names that turn and the retrace is trimmed there, one pair at
  * a time while the GPX rides the pair one way only.
  */
 final class SpurTrimmer {
@@ -76,12 +76,12 @@ final class SpurTrimmer {
      * first and last stretch are never removed, so the path keeps its start and end.
      */
     static List<TrimmedSpur> trim(List<MatchWaypoints.Stretch> stretches, RouteDeviation.LineIndex gpx) {
-        return trim(stretches, gpx, node -> false);
+        return trim(stretches, gpx, edgeKey -> false);
     }
 
     /**
-     * As {@link #trim(List, RouteDeviation.LineIndex)}, and also trims a retrace that turns on the GPX at a node that
-     * {@code trimOneWayAt} accepts, while the GPX rides it one way only.
+     * As {@link #trim(List, RouteDeviation.LineIndex)}, and also trims a retrace that turns on the GPX, while the GPX
+     * rides it one way only, where {@code trimOneWayAt} accepts the edge key of the stretch the retrace turns back on.
      */
     static List<TrimmedSpur> trim(List<MatchWaypoints.Stretch> stretches, RouteDeviation.LineIndex gpx, IntPredicate trimOneWayAt) {
         List<TrimmedSpur> trimmed = new ArrayList<>();
@@ -94,7 +94,7 @@ final class SpurTrimmer {
                 GHPoint apex = new GHPoint(stretches.get(k).geometry.getLat(0), stretches.get(k).geometry.getLon(0));
                 double apexDistance = gpx.distance(apex.lat, apex.lon);
                 boolean apexOnGpx = apexDistance <= TOLERANCE_METERS;
-                if (apexOnGpx && !trimOneWayAt.test(stretches.get(k).baseNode))
+                if (apexOnGpx && !trimOneWayAt.test(stretches.get(k).edgeKey))
                     continue;
                 // pair j is the outgoing stretch k-1-j and the returning stretch k+j
                 int pairs = 0;
