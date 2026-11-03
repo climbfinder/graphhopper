@@ -190,6 +190,37 @@ public final class RouteDeviation {
             return best;
         }
 
+        /**
+         * Whether a segment of the line within {@code meters} of the point runs within 60 degrees of the direction
+         * from (lat0, lon0) to (lat1, lon1).
+         */
+        public boolean runsAlong(double lat, double lon, double lat0, double lon0, double lat1, double lon1, double meters) {
+            double cosLat = Math.cos(lat * DEG);
+            double dx = (lon1 - lon0) * cosLat, dy = lat1 - lat0;
+            double dLength = Math.hypot(dx, dy);
+            if (dLength == 0)
+                return false;
+            int px = cell(lon), py = cell(lat);
+            int rings = (int) Math.ceil(meters / minCellMeters);
+            Set<Integer> seen = new HashSet<>();
+            for (int x = px - rings; x <= px + rings; x++) {
+                for (int y = py - rings; y <= py + rings; y++) {
+                    List<Integer> segments = cells.get(key(x, y));
+                    if (segments == null)
+                        continue;
+                    for (int i : segments) {
+                        if (!seen.add(i) || pointToSegmentMeters(lat, lon, line.getLat(i), line.getLon(i), line.getLat(i + 1), line.getLon(i + 1)) > meters)
+                            continue;
+                        double sx = (line.getLon(i + 1) - line.getLon(i)) * cosLat, sy = line.getLat(i + 1) - line.getLat(i);
+                        double sLength = Math.hypot(sx, sy);
+                        if (sLength > 0 && (dx * sx + dy * sy) / (dLength * sLength) > 0.5)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         private double visit(int x, int y, double lat, double lon, Set<Integer> seen, double best) {
             List<Integer> segments = cells.get(key(x, y));
             if (segments == null)

@@ -17,11 +17,14 @@
  */
 package com.graphhopper.matching;
 
+import com.graphhopper.util.DistanceCalcEarth;
 import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.PointList;
 import com.graphhopper.util.shapes.GHPoint;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntPredicate;
 
 /**
  * Removes out-and-back spurs that the matcher adds but the GPX does not ride.
@@ -36,10 +39,19 @@ import java.util.List;
  * routing can reproduce it: it turns back at the node where the trim stopped, or goes straight on where the whole spur
  * was removed. The price is that an edge whose far end is off the GPX is removed whole, also when the GPX rides its
  * first part.
+ * <p>
+ * A retrace whose turning point does lie on the GPX is an out-and-back of the ride only if the GPX rides it both ways.
+ * Where the GPX rides it one way only, the ride does not turn there: it comes in from, or leaves for, a stretch the
+ * match does not use (missing from the network, or avoided by the matcher), and the match rides out and back to visit
+ * the point. Such a retrace is kept as long as the waypoints can reproduce it, since it still covers what the GPX
+ * rides. Where they cannot (with {@code pass_through} the router avoids turning back at a waypoint that has a way
+ * onwards, so the next leg loops), {@link MatchWaypoints} names that turn and the retrace is trimmed there, one pair at
+ * a time while the GPX rides the pair one way only.
  */
 final class SpurTrimmer {
 
     static final double TOLERANCE_METERS = 15;
+    private static final double SAMPLE_METERS = 5;
 
     static final class TrimmedSpur {
         /** Where the matched path turned back. */
@@ -64,6 +76,14 @@ final class SpurTrimmer {
      * first and last stretch are never removed, so the path keeps its start and end.
      */
     static List<TrimmedSpur> trim(List<MatchWaypoints.Stretch> stretches, RouteDeviation.LineIndex gpx) {
+        return trim(stretches, gpx, edgeKey -> false);
+    }
+
+    /**
+     * As {@link #trim(List, RouteDeviation.LineIndex)}, and also trims a retrace that turns on the GPX, while the GPX
+     * rides it one way only, where {@code trimOneWayAt} accepts the edge key of the stretch the retrace turns back on.
+     */
+    static List<TrimmedSpur> trim(List<MatchWaypoints.Stretch> stretches, RouteDeviation.LineIndex gpx, IntPredicate trimOneWayAt) {
         List<TrimmedSpur> trimmed = new ArrayList<>();
         boolean changed = true;
         while (changed) {
@@ -73,13 +93,16 @@ final class SpurTrimmer {
                     continue;
                 GHPoint apex = new GHPoint(stretches.get(k).geometry.getLat(0), stretches.get(k).geometry.getLon(0));
                 double apexDistance = gpx.distance(apex.lat, apex.lon);
-                if (apexDistance <= TOLERANCE_METERS)
+                boolean apexOnGpx = apexDistance <= TOLERANCE_METERS;
+                if (apexOnGpx && !trimOneWayAt.test(stretches.get(k).edgeKey))
                     continue;
                 // pair j is the outgoing stretch k-1-j and the returning stretch k+j
                 int pairs = 0;
                 while (k - 1 - pairs >= 1 && k + pairs <= stretches.size() - 2
                         && stretches.get(k + pairs).edgeKey == GHUtility.reverseEdgeKey(stretches.get(k - 1 - pairs).edgeKey)
-                        && isOff(stretches.get(k - 1 - pairs), gpx))
+                        && (apexOnGpx
+                        ? ridden(stretches.get(k - 1 - pairs), gpx) != ridden(stretches.get(k + pairs), gpx)
+                        : isOff(stretches.get(k - 1 - pairs), gpx)))
                     pairs++;
                 if (pairs == 0)
                     continue;
@@ -94,6 +117,27 @@ final class SpurTrimmer {
             }
         }
         return trimmed;
+    }
+
+    /**
+     * Whether the GPX rides the stretch in the stretch's direction: a GPX segment within the tolerance of a point of the
+     * stretch (every 5 m, its ends excluded) runs within 60 degrees of the stretch's direction there.
+     */
+    static boolean ridden(MatchWaypoints.Stretch stretch, RouteDeviation.LineIndex gpx) {
+        PointList geometry = stretch.geometry;
+        double remaining = Math.min(SAMPLE_METERS, stretch.length / 2);
+        for (int i = 1; i < geometry.size(); i++) {
+            double lat0 = geometry.getLat(i - 1), lon0 = geometry.getLon(i - 1), lat1 = geometry.getLat(i), lon1 = geometry.getLon(i);
+            double segment = DistanceCalcEarth.DIST_EARTH.calcDist(lat0, lon0, lat1, lon1);
+            double at = remaining;
+            for (; at < segment; at += SAMPLE_METERS) {
+                double f = at / segment;
+                if (gpx.runsAlong(lat0 + f * (lat1 - lat0), lon0 + f * (lon1 - lon0), lat0, lon0, lat1, lon1, TOLERANCE_METERS))
+                    return true;
+            }
+            remaining = at - segment;
+        }
+        return false;
     }
 
     /** Whether the end of the stretch (towards the turning point) lies more than the tolerance from the GPX. */
