@@ -47,6 +47,7 @@ import com.graphhopper.util.exceptions.MaximumNodesExceededException;
 import com.graphhopper.util.shapes.GHPoint;
 
 import java.util.*;
+import java.util.function.IntPredicate;
 
 import static com.graphhopper.util.EdgeIterator.NO_EDGE;
 
@@ -228,6 +229,11 @@ public class MatchWaypoints {
         public int getRemovedWaypoints() {
             return removedWaypoints;
         }
+
+        Result withRouteEvaluations(int routeEvaluations) {
+            return new Result(waypoints, routeEvaluations, candidates, skippedCandidates, removedWaypoints, legsWithinTolerance,
+                    trimmedSpurs, matchLengthBeforeTrim, matchPoints);
+        }
     }
 
     private final GraphHopper hopper;
@@ -280,14 +286,30 @@ public class MatchWaypoints {
      * @param gpx the track that was matched, to tell the spurs the matcher added from the ones the track rides
      */
     public Result reconstruct(MatchResult matchResult, PointList gpx) {
+        RouteDeviation.LineIndex gpxIndex = gpx.size() >= 2 ? new RouteDeviation.LineIndex(gpx) : null;
+        Set<Integer> uTurnApexes = new HashSet<>();
+        Result result = reconstruct(matchResult, gpxIndex, node -> false, uTurnApexes);
+        if (gpxIndex == null || uTurnApexes.isEmpty())
+            return result;
+        // A leg was forced because the router does not turn where the match does. Where the GPX rides that retrace
+        // one way only, the ride does not turn there either (see SpurTrimmer): trim those retraces and search again.
+        Result retry = reconstruct(matchResult, gpxIndex, uTurnApexes::contains, new HashSet<>());
+        return retry.withRouteEvaluations(result.routeEvaluations + retry.routeEvaluations);
+    }
+
+    /**
+     * @param trimOneWayAt the turning nodes at which a retrace the GPX rides one way only is trimmed
+     * @param uTurnApexes  receives the turning nodes of the match inside legs forced with {@link ForcedReason#U_TURN}
+     */
+    private Result reconstruct(MatchResult matchResult, RouteDeviation.LineIndex gpx, IntPredicate trimOneWayAt, Set<Integer> uTurnApexes) {
         Twins twins = new Twins();
         List<Stretch> stretches = toStretches(matchResult, twins);
         if (stretches.isEmpty())
             throw new IllegalArgumentException("The GPX track matches no road stretch; it needs at least two points that are further apart");
         double lengthBeforeTrim = RouteDeviation.length(new MatchLine(stretches).points);
         List<TrimmedSpur> trimmedSpurs = new ArrayList<>();
-        if (gpx.size() >= 2)
-            for (SpurTrimmer.TrimmedSpur spur : SpurTrimmer.trim(stretches, new RouteDeviation.LineIndex(gpx)))
+        if (gpx != null)
+            for (SpurTrimmer.TrimmedSpur spur : SpurTrimmer.trim(stretches, gpx, trimOneWayAt))
                 trimmedSpurs.add(new TrimmedSpur(spur.apex, spur.apexDistance, spur.length));
         int[] keys = new int[stretches.size()];
         boolean[] allowed = new boolean[stretches.size()];
@@ -328,6 +350,13 @@ public class MatchWaypoints {
         for (int i = 1; i < kept.size(); i++) {
             Evaluation leg = evaluator.evaluate(kept.get(i - 1), kept.get(i), incoming);
             waypoints.add(new Waypoint(candidates.get(kept.get(i)).point, leg.followsMatch ? null : leg.reason));
+            if (!leg.followsMatch && leg.reason == ForcedReason.U_TURN) {
+                // the stretches reason() looked at: from the one before the leg to the last of the leg
+                Candidate from = candidates.get(kept.get(i - 1)), to = candidates.get(kept.get(i));
+                for (int s = Math.max(0, from.firstStretch - 1) + 1; s <= to.lastStretch; s++)
+                    if (keys[s] == GHUtility.reverseEdgeKey(keys[s - 1]))
+                        uTurnApexes.add(stretches.get(s).baseNode);
+            }
             if (leg.withinTolerance)
                 legsWithinTolerance++;
             incoming = leg.finalEdge;
