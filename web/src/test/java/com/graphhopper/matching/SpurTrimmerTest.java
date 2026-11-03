@@ -105,6 +105,31 @@ public class SpurTrimmerTest {
     }
 
     @Test
+    public void retraceToWhereTheGpxComesInFromOffTheNetworkIsTrimmed() {
+        // the ride comes straight in from the north-west, off the network, joins the side street at its far end and
+        // rides it down to the main road; the match reaches the main road elsewhere and rides up the side street and
+        // back to visit that far end, where the ride does not turn (climbfinder-graphhopper#28)
+        PointList gpx = line(north(300), 3.998, north(100), 4.001, 50.0, 4.001, 50.0, 4.002);
+        List<MatchWaypoints.Stretch> path = pathWithSpur(100);
+        List<SpurTrimmer.TrimmedSpur> trimmed = SpurTrimmer.trim(path, gpx(gpx));
+        assertEquals(1, trimmed.size());
+        assertEquals(200, trimmed.get(0).length, 0.5);
+        assertEquals(0, trimmed.get(0).apexDistance, 0.5);
+        assertEquals(List.of(2, 4), List.of(keys(path)[0], keys(path)[1]));
+        assertEquals(2, path.size());
+    }
+
+    @Test
+    public void retraceFromWhereTheGpxLeavesTheNetworkIsTrimmed() {
+        // the mirror image: the ride goes up the side street and leaves its far end off the network, towards the
+        // north-west; the match rides up and back down again, a turn the ride does not make either
+        PointList gpx = line(50.0, 4.000, 50.0, 4.001, north(100), 4.001, north(300), 3.998);
+        List<MatchWaypoints.Stretch> path = pathWithSpur(100);
+        assertEquals(1, SpurTrimmer.trim(path, gpx(gpx)).size());
+        assertEquals(2, path.size());
+    }
+
+    @Test
     public void onlyThePartBeyondWhatTheGpxRidesIsTrimmed() {
         // the ride goes 100 m up the side street and back, the match goes on to 200 m before it turns
         PointList gpx = line(50.0, 4.000, 50.0, 4.001, north(100), 4.001, 50.0, 4.001, 50.0, 4.002);
